@@ -16,6 +16,7 @@ jobs:
     env:
       CDK_DEFAULT_REGION: ${{ secrets.CDK_DEFAULT_REGION }}
       CDK_DEFAULT_ACCOUNT: ${{ secrets.CDK_DEFAULT_ACCOUNT }}
+      DOMAIN_NAME: ${{ secrets.DOMAIN_NAME }}
       ARN_ECS_ECR_ADMIN: ${{ secrets.ARN_ECS_ECR_ADMIN }}
       ARN_ECS_TASK_EXECUTION: ${{ secrets.ARN_ECS_TASK_EXECUTION }}
       BACKEND_ECR_REGISTRY_NAME: ${{ secrets.BACKEND_ECR_REGISTRY_NAME }}
