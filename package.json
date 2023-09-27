@@ -1,0 +1,35 @@
+{
+  "name": "cdk-infra",
+  "version": "0.1.0",
+  "bin": {
+    "cdk-infra": "bin/cdk-infra.js"
+  },
+  "scripts": {
+    "clean": "tsc --build --clean",
+    "build": "npm run clean && npx tsc",
+    "watch": "npm run clean && npx tsc -w",
+    "lint": "npx eslint --fix --ext .ts . && npx prettier --write .",
+    "check-lint": "npx eslint --ext .ts . && npx prettier --check .",
+    "bootstrap": "cdk bootstrap",
+    "synth": "cdk synth",
+    "deploy": "cdk deploy"
+  },
+  "dependencies": {
+    "aws-cdk": "^2.97.0",
+    "aws-cdk-lib": "^2.97.0",
+    "constructs": "^10.0.0",
+    "dotenv": "^16.3.0",
+    "envalid": "^7.3.1"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.1",
+    "@types/node": "20.1.7",
+    "@typescript-eslint/eslint-plugin": "^5.59.11",
+    "eslint": "^8.43.0",
+    "eslint-config-prettier": "^9.0.0",
+    "prettier": "^3.0.3",
+    "ts-jest": "^29.1.0",
+    "ts-node": "^10.9.1",
+    "typescript": "~5.0.4"
+  }
+}
