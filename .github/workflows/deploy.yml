@@ -1,16 +1,17 @@
 name: 'Deploy'
-on: workflow_dispatch
-  inputs:
-    shouldDeployCore:
-      description: 'Should deploy CoreStack'
-      default: true
-      required: false
-      type: boolean
-    shouldDeployInfra:
-      description: 'Should deploy InfraStack'
-      default: true
-      required: false
-      type: boolean
+on:
+  workflow_dispatch:
+    inputs:
+      shouldDeployCore:
+        description: 'Should deploy CoreStack'
+        default: true
+        required: false
+        type: boolean
+      shouldDeployInfra:
+        description: 'Should deploy InfraStack'
+        default: true
+        required: false
+        type: boolean
 
 # This allows a subsequently queued workflow run to interrupt previous runs
 concurrency:
