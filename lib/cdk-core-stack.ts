@@ -58,7 +58,7 @@ export class CdkCoreStack extends Stack {
       }
     )
 
-    rdsSecurityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.allTraffic())
+    rdsSecurityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(3306))
 
     // CREATE RDS INSTANCE
     new rds.DatabaseInstance(this, 'ca3-rds-instance', {
