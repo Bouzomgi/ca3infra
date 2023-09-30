@@ -1,6 +1,8 @@
 import env from '../config'
 import { RemovalPolicy, Stack, StackProps } from 'aws-cdk-lib'
 import { Construct } from 'constructs'
+import * as cdk from 'aws-cdk-lib'
+import * as rds from 'aws-cdk-lib/aws-rds'
 import * as s3 from 'aws-cdk-lib/aws-s3'
 import * as ec2 from 'aws-cdk-lib/aws-ec2'
 import * as ecs from 'aws-cdk-lib/aws-ecs'
@@ -13,6 +15,7 @@ import * as origins from 'aws-cdk-lib/aws-cloudfront-origins'
 import * as route53 from 'aws-cdk-lib/aws-route53'
 import { CloudFrontTarget } from 'aws-cdk-lib/aws-route53-targets'
 import * as ssm from 'aws-cdk-lib/aws-ssm'
+import * as secretsManager from 'aws-cdk-lib/aws-secretsmanager'
 
 const awsEnv = {
   env: {
@@ -21,53 +24,38 @@ const awsEnv = {
   }
 }
 
+export interface InfraStackProps extends cdk.StackProps {
+  vpc: ec2.Vpc
+  webserverBucket: s3.Bucket
+}
+
 export class CdkInfraStack extends Stack {
-  constructor(scope: Construct, id: string, props?: StackProps) {
-    super(scope, id, props ? props : awsEnv)
+  constructor(scope: Construct, id: string, props: InfraStackProps) {
+    super(scope, id, Object.assign(props, awsEnv))
 
-    const applicationName = 'ca3'
+    const vpc = props.vpc
+    const webserverBucket = props.webserverBucket
 
-    // CREATE VPC & SUBNETS
-    const vpc = new ec2.Vpc(this, `${applicationName}-vpc`, {
-      availabilityZones: ['us-east-1a', 'us-east-1b'],
-      natGatewaySubnets: {
-        availabilityZones: ['us-east-1a'],
-        subnetType: ec2.SubnetType.PUBLIC
-      },
-      natGateways: 1,
-      subnetConfiguration: [
-        {
-          cidrMask: 20,
-          name: 'public',
-          subnetType: ec2.SubnetType.PUBLIC
-        },
-        {
-          cidrMask: 20,
-          name: 'server',
-          subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS
-        }
-      ],
-      vpcName: `${applicationName}-vpc`
+    const natGatewaySubnet = vpc.publicSubnets.filter(
+      (elem) => elem.availabilityZone == 'us-east-1a'
+    )[0]
+
+    const natGatewayEip = new ec2.CfnEIP(this, 'nat-gateway-eip')
+
+    // ADD NAT GATEWAY TO PUBLIC SUBNET
+    const natGateway = new ec2.CfnNatGateway(this, 'ca3-nat-gateway', {
+      subnetId: natGatewaySubnet.subnetId,
+      allocationId: natGatewayEip.attrAllocationId
     })
 
-    // CREATE S3 BUCKET FOR WEBSERVER
-    const webserverBucket = new s3.Bucket(
-      this,
-      `${applicationName}-webserver`,
-      {
-        autoDeleteObjects: true,
-        blockPublicAccess: new s3.BlockPublicAccess({
-          blockPublicPolicy: false,
-          blockPublicAcls: false,
-          ignorePublicAcls: false,
-          restrictPublicBuckets: false
-        }),
-        bucketName: `${applicationName}-webserver`,
-        publicReadAccess: true,
-        removalPolicy: RemovalPolicy.DESTROY,
-        websiteIndexDocument: 'index.html'
-      }
-    )
+    // ADD ROUTES FROM PRIVATE SUBNETS TO PUBLIC SUBNETS
+    vpc.privateSubnets.forEach((subnet, index) => {
+      new ec2.CfnRoute(this, `subnet${index}-nat-route`, {
+        routeTableId: subnet.routeTable.routeTableId,
+        destinationCidrBlock: '0.0.0.0/0',
+        natGatewayId: natGateway.attrNatGatewayId
+      })
+    })
 
     // GET REFERENCES TO EXISTING ROLES TO BE USED BY ECS
     const ecsEcrAdmin = iam.Role.fromRoleArn(
@@ -82,63 +70,38 @@ export class CdkInfraStack extends Stack {
     )
 
     // CREATE ECS CLUSTER
-    const cluster = new ecs.Cluster(this, `${applicationName}-cluster`, {
-      clusterName: `${applicationName}`,
+    const cluster = new ecs.Cluster(this, 'ca3-cluster', {
+      clusterName: 'ca3',
       vpc: vpc,
       enableFargateCapacityProviders: true
     })
 
     // CREATE LOG DRIVERS FOR APPSERVER
-    const logGroup = new logs.LogGroup(this, `${applicationName}-log-group`)
+    const logGroup = new logs.LogGroup(this, 'ca3-log-group')
 
     const appserverLogDriver = ecs.LogDriver.awsLogs({
       streamPrefix: 'appserver',
       logGroup
     })
 
-    const dbUsername = ssm.StringParameter.fromSecureStringParameterAttributes(
-      this,
-      'db_username_param',
-      {
-        parameterName: '/ca3be/prod/db_username'
-      }
-    )
-
-    const dbPassword = ssm.StringParameter.fromSecureStringParameterAttributes(
-      this,
-      'db_password_param',
-      {
-        parameterName: '/ca3be/prod/db_password'
-      }
-    )
-
-    const dbHost = ssm.StringParameter.fromSecureStringParameterAttributes(
-      this,
-      'db_host_param',
-      {
-        parameterName: '/ca3be/prod/db_host'
-      }
-    )
-
-    const dbName = ssm.StringParameter.fromSecureStringParameterAttributes(
-      this,
-      'db_name_param',
-      {
-        parameterName: '/ca3be/prod/db_name'
-      }
-    )
-
     // CREATE APPSERVER ECS TASKDEFINITION & CONTAINER
+    const rdsLoginSecret = secretsManager.Secret.fromSecretNameV2(
+      this,
+      'ca3-rds-login-secret',
+      'ca3-rds-creds'
+    )
+
     const appserverTaskDefinition = new ecs.FargateTaskDefinition(
       this,
-      `${applicationName}-appserver-taskdefiniton`,
+      'ca3-appserver-taskdefiniton',
       {
         cpu: 256,
-        family: `${applicationName}-appserver-taskdefintion`,
+        family: 'ca3-appserver-taskdefiniton',
         executionRole: ecsEcrAdmin,
         taskRole: ecsTaskExecutionRole
       }
     )
+
     appserverTaskDefinition.addContainer('appserver', {
       image: ecs.ContainerImage.fromRegistry(env.BACKEND_ECR_REGISTRY_NAME),
       containerName: 'appserver',
@@ -151,10 +114,11 @@ export class CdkInfraStack extends Stack {
         )
       },
       secrets: {
-        DB_USERNAME: ecs.Secret.fromSsmParameter(dbUsername),
-        DB_PASSWORD: ecs.Secret.fromSsmParameter(dbPassword),
-        DB_HOST: ecs.Secret.fromSsmParameter(dbHost),
-        DB_NAME: ecs.Secret.fromSsmParameter(dbName)
+        DB_USERNAME: ecs.Secret.fromSecretsManager(rdsLoginSecret, 'username'),
+        DB_PASSWORD: ecs.Secret.fromSecretsManager(rdsLoginSecret, 'password'),
+        DB_DIALECT: ecs.Secret.fromSecretsManager(rdsLoginSecret, 'engine'),
+        DB_NAME: ecs.Secret.fromSecretsManager(rdsLoginSecret, 'dbname'),
+        DB_HOST: ecs.Secret.fromSecretsManager(rdsLoginSecret, 'host')
       },
       logging: appserverLogDriver,
       portMappings: [
@@ -169,7 +133,7 @@ export class CdkInfraStack extends Stack {
     // CREATE WEB SERVER SECURITY GROUP
     const appserverSecurityGroup = new ec2.SecurityGroup(
       this,
-      `${applicationName}-server-security-group`,
+      'ca3-server-security-group',
       {
         vpc: vpc,
         allowAllOutbound: true
@@ -179,7 +143,7 @@ export class CdkInfraStack extends Stack {
     // CREATE LOAD BALANCER SECURITY GROUP
     const loadBalancerSecurityGroup = new ec2.SecurityGroup(
       this,
-      `${applicationName}-loadbalancer-security-group`,
+      'ca3-loadbalancer-security-group',
       {
         vpc: vpc,
         allowAllOutbound: true
@@ -212,7 +176,7 @@ export class CdkInfraStack extends Stack {
     // CREATE FRONTEND ALB
     const frontendLoadBalancer = new elbv2.ApplicationLoadBalancer(
       this,
-      `${applicationName}-frontend-load-balancer`,
+      'ca3-frontend-load-balancer',
       {
         vpc,
         internetFacing: true,
@@ -243,24 +207,12 @@ export class CdkInfraStack extends Stack {
       }
     )
 
-    // CREATE LISTENER AND ASSIGN TARGET GROUPS
-    const frontendListener = frontendLoadBalancer.addListener(
-      'frontend-listener',
-      {
-        port: 80
-      }
-    )
-
-    frontendListener.addTargetGroups('appserver-targets', {
-      targetGroups: [appserverTargetGroup]
-    })
-
+    // CREATE CLOUDFRONT DISTRIBUTION
     const certificateArn = env.ARN_CLOUDFRONT_CERTIFICATE
 
-    // CREATE CLOUDFRONT DISTRIBUTION
     const appDistribution = new cloudfront.Distribution(
       this,
-      `${applicationName}-cloudfront-distribution`,
+      'ca3-cloudfront-distribution',
       {
         defaultBehavior: {
           origin: new origins.S3Origin(webserverBucket)
@@ -276,7 +228,7 @@ export class CdkInfraStack extends Stack {
         },
         certificate: Certificate.fromCertificateArn(
           this,
-          `${applicationName}-certificate`,
+          'ca3-certificate',
           certificateArn
         ),
         defaultRootObject: 'index.html',
@@ -285,14 +237,22 @@ export class CdkInfraStack extends Stack {
       }
     )
 
-    // REASSIGN ROUTE53 URL TO POINT TO FRONTEND ALB
-    const zone = route53.HostedZone.fromLookup(
-      this,
-      `${applicationName}-hosted-zone`,
+    // CREATE LISTENER AND ASSIGN TARGET GROUPS
+    const frontendListener = frontendLoadBalancer.addListener(
+      'frontend-listener',
       {
-        domainName: env.DOMAIN_NAME
+        port: 80
       }
     )
+
+    frontendListener.addTargetGroups('appserver-targets', {
+      targetGroups: [appserverTargetGroup]
+    })
+
+    // REASSIGN ROUTE53 URL TO POINT TO FRONTEND ALB
+    const zone = route53.HostedZone.fromLookup(this, 'ca3-hosted-zone', {
+      domainName: env.DOMAIN_NAME
+    })
 
     new route53.ARecord(this, 'AliasRecord', {
       zone,

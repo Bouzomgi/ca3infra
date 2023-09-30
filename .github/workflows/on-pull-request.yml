@@ -48,4 +48,4 @@ jobs:
         run: npx cdk bootstrap
 
       - name: Synthesize
-        run: npx cdk synth --require-approval never
+        run: npx cdk synth --require-approval never --all

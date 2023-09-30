@@ -1,5 +1,16 @@
 name: 'Destroy'
 on: workflow_dispatch
+  inputs:
+    shouldDestroyCore:
+      description: 'Should destroy CoreStack'
+      default: true
+      required: false
+      type: boolean
+    shouldDestroyInfra:
+      description: 'Should destroy InfraStack'
+      default: true
+      required: false
+      type: boolean
 
 # This allows a subsequently queued workflow run to interrupt previous runs
 concurrency:
@@ -45,4 +56,9 @@ jobs:
         run: npx cdk bootstrap
 
       - name: Destroy
-        run: echo yes | npx cdk destroy
+        run: npx cdk destroy CDKCoreStack
+        if: ${{ inputs.shouldDestroyCore }}
+
+      - name: Destroy
+        run: npx cdk destroy CDKInfraStack
+        if: ${{ inputs.shouldDestroyInfra }}

@@ -1,5 +1,16 @@
 name: 'Deploy'
 on: workflow_dispatch
+  inputs:
+    shouldDeployCore:
+      description: 'Should deploy CoreStack'
+      default: true
+      required: false
+      type: boolean
+    shouldDeployInfra:
+      description: 'Should deploy InfraStack'
+      default: true
+      required: false
+      type: boolean
 
 # This allows a subsequently queued workflow run to interrupt previous runs
 concurrency:
@@ -44,8 +55,10 @@ jobs:
       - name: Bootstrap
         run: npx cdk bootstrap
 
-      - name: Synthesize
-        run: npx cdk synth --require-approval never
+      - name: Deploy Core Stack
+        run: npx cdk deploy --require-approval never CDKCoreStack
+        if: ${{ inputs.shouldDeployCore }}
 
-      - name: Deploy
-        run: npx cdk deploy --require-approval never
+      - name: Deploy Infra Stack
+        run: npx cdk deploy --require-approval never CDKInfraStack
+        if: ${{ inputs.shouldDeployInfra }}
