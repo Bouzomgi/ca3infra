@@ -57,9 +57,9 @@ jobs:
         run: npx cdk bootstrap
 
       - name: Deploy Core Stack
-        run: npx cdk deploy --require-approval never CDKCoreStack
+        run: npx cdk deploy --require-approval never CdkCoreStack
         if: ${{ inputs.shouldDeployCore }}
 
       - name: Deploy Infra Stack
-        run: npx cdk deploy --require-approval never CDKInfraStack
+        run: npx cdk deploy --require-approval never CdkInfraStack
         if: ${{ inputs.shouldDeployInfra }}

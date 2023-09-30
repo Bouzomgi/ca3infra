@@ -57,9 +57,9 @@ jobs:
         run: npx cdk bootstrap
 
       - name: Destroy
-        run: npx cdk destroy CDKCoreStack
+        run: npx cdk destroy CdkCoreStack
         if: ${{ inputs.shouldDestroyCore }}
 
       - name: Destroy
-        run: npx cdk destroy CDKInfraStack
+        run: npx cdk destroy CdkInfraStack
         if: ${{ inputs.shouldDestroyInfra }}
